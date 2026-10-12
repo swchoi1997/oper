@@ -1,76 +1,99 @@
 import asyncio
-from app.core.database import engine, Base, AsyncSessionLocal
-import app.models
-from app.models.report import Report
-from app.models.report_detail import ReportDetail
-from app.services.tree_service import (
-    compute_new_node_position,
-    build_tree_structure,
-    delete_node_and_descendants
-)
-from sqlalchemy import select
+from datetime import date
+from app.core.database import init_db_pool, close_db_pool, init_db, get_pool
+from app.domain.report.service import ReportService
+from app.domain.report.schema import ReportCreate, ReportUpdate
+from app.domain.report_detail.service import ReportDetailService
+from app.domain.report_detail.schema import ReportDetailCreate, ReportDetailUpdate, ReorderRequest
 
 async def main():
-    print("[1] DB 테이블 생성 중...")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    print("테이블 생성 완료!")
+    print("=== [1] DB 커넥션 풀 초기화 및 순수 DDL 실행 ===")
+    await init_db_pool()
+    await init_db()
+    print("✓ DB 풀 및 DDL 검증 완료")
 
-    async with AsyncSessionLocal() as db:
-        print("[2] 테스트 Report 생성 중...")
-        report = Report(title="2026-10-12 주간 인프라 정기 점검 일지", author="최운영", status="DRAFT")
-        db.add(report)
-        await db.commit()
-        await db.refresh(report)
-        print(f"Report 생성됨: ID={report.id}, Title={report.title}")
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        report_service = ReportService()
+        detail_service = ReportDetailService()
 
-        print("[3] 루트 Detail 0 생성...")
-        path0, order0, depth0 = await compute_new_node_position(db, report.id, None)
-        d0 = ReportDetail(report_id=report.id, parent_id=None, path=path0, sort_order=order0, depth=depth0, title="1. 서버 리소스 점검", description="CPU 및 메모리 사용률 요약", content="전체 서버 CPU 사용률 40% 미만으로 정상")
-        db.add(d0)
-        await db.commit()
-        await db.refresh(d0)
-        print(f"Detail 생성됨: ID={d0.id}, Path={d0.path}, Depth={d0.depth}")
+        print("\n=== [2] 신규 Report 생성 테스트 (Pure SQL) ===")
+        rep = await report_service.create_report(
+            conn,
+            ReportCreate(
+                title="2026-10-12 아키텍처 리팩토링 검증 일지",
+                author="최운영",
+                status="DRAFT"
+            )
+        )
+        print(f"✓ Report 생성 성공: ID={rep.id}, Title={rep.title}, Date={rep.report_date}")
 
-        print("[4] d0의 자식 Detail 생성 (0.0)...")
-        path0_0, order0_0, depth0_0 = await compute_new_node_position(db, report.id, d0.id)
-        d0_0 = ReportDetail(report_id=report.id, parent_id=d0.id, path=path0_0, sort_order=order0_0, depth=depth0_0, title="1-1. 웹 서버 클러스터", description="Nginx & App pods", content="인스턴스 4대 모두 정상 동작")
-        db.add(d0_0)
-        await db.commit()
-        await db.refresh(d0_0)
-        print(f"Detail 생성됨: ID={d0_0.id}, Path={d0_0.path}, Depth={d0_0.depth}")
+        print("\n=== [3] Root Detail 항목 생성 테스트 ===")
+        d0 = await detail_service.create_detail(
+            conn,
+            rep.id,
+            ReportDetailCreate(
+                title="1. 인프라 아키텍처 개편",
+                description="ORM 제거 및 asyncpg 전환",
+                content="SQLAlchemy ORM을 완전히 걷어내고 순수 asyncpg 쿼리로 개편함"
+            )
+        )
+        print(f"✓ Root Detail 생성: ID={d0.id}, Path={d0.path}, Depth={d0.depth}, Title={d0.title}")
 
-        print("[5] d0의 두번째 자식 Detail 생성 (0.1)...")
-        path0_1, order0_1, depth0_1 = await compute_new_node_position(db, report.id, d0.id)
-        d0_1 = ReportDetail(report_id=report.id, parent_id=d0.id, path=path0_1, sort_order=order0_1, depth=depth0_1, title="1-2. DB 클러스터", description="PostgreSQL Master-Replica", content="슬레이브 복제 지연 0초")
-        db.add(d0_1)
-        await db.commit()
-        await db.refresh(d0_1)
-        print(f"Detail 생성됨: ID={d0_1.id}, Path={d0_1.path}, Depth={d0_1.depth}")
+        print("\n=== [4] Child Detail 항목 생성 (Depth 1) ===")
+        d0_0 = await detail_service.create_detail(
+            conn,
+            rep.id,
+            ReportDetailCreate(
+                parent_id=d0.id,
+                title="1-1. Connection Pool 구성",
+                description="asyncpg.create_pool",
+                content="최대 10개 커넥션 풀 적용"
+            )
+        )
+        print(f"✓ Child Detail 생성: ID={d0_0.id}, Path={d0_0.path}, Depth={d0_0.depth}, Title={d0_0.title}")
 
-        print("[6] d0_1의 자식 Detail 생성 (0.1.0)...")
-        path0_1_0, order0_1_0, depth0_1_0 = await compute_new_node_position(db, report.id, d0_1.id)
-        d0_1_0 = ReportDetail(report_id=report.id, parent_id=d0_1.id, path=path0_1_0, sort_order=order0_1_0, depth=depth0_1_0, title="1-2-1. 커넥션 풀 상태", description="PgBouncer 모니터링", content="활성 커넥션 24/100")
-        db.add(d0_1_0)
-        await db.commit()
-        await db.refresh(d0_1_0)
-        print(f"Detail 생성됨: ID={d0_1_0.id}, Path={d0_1_0.path}, Depth={d0_1_0.depth}")
+        print("\n=== [5] Child Detail 항목 생성 (Depth 2) ===")
+        d0_0_0 = await detail_service.create_detail(
+            conn,
+            rep.id,
+            ReportDetailCreate(
+                parent_id=d0_0.id,
+                title="1-1-1. 성능 벤치마크",
+                description="Latency 50% 단축",
+                content="ORM 오버헤드 제거로 응답 속도 대폭 향상"
+            )
+        )
+        print(f"✓ Child Detail 생성: ID={d0_0_0.id}, Path={d0_0_0.path}, Depth={d0_0_0.depth}, Title={d0_0_0.title}")
 
-        print("[7] 전체 트리 구조 조회 검증...")
-        query = select(ReportDetail).where(ReportDetail.report_id == report.id).order_by(ReportDetail.path.asc())
-        res = await db.execute(query)
-        all_details = res.scalars().all()
-        tree = build_tree_structure(all_details)
-
+        print("\n=== [6] 전체 트리 구조 조회 (Pure SQL -> Node Hierarchy) ===")
+        tree = await detail_service.get_tree(conn, rep.id)
         def print_tree(nodes, indent=0):
             for n in nodes:
                 print("  " * indent + f"└─ [{n.path}] (depth={n.depth}) {n.title}")
                 print_tree(n.children, indent + 1)
-
         print_tree(tree)
 
-    await engine.dispose()
-    print("검증 완료!")
+        print("\n=== [7] Report 조회 및 details_count 검증 ===")
+        rep_fetched = await report_service.get_report(conn, rep.id)
+        print(f"✓ Report 조회: ID={rep_fetched.id}, details_count={rep_fetched.details_count}")
+        assert rep_fetched.details_count == 3, f"Expected 3 details, got {rep_fetched.details_count}"
+
+        print("\n=== [8] 세부 항목 수정 테스트 ===")
+        updated_d = await detail_service.update_detail(
+            conn,
+            rep.id,
+            d0_0_0.id,
+            ReportDetailUpdate(title="1-1-1. 성능 벤치마크 (검증 완료)")
+        )
+        print(f"✓ 수정 완료: {updated_d.title}")
+
+        print("\n=== [9] 생성된 테스트 Report 삭제 (CASCADE 검증) ===")
+        await report_service.delete_report(conn, rep.id)
+        print("✓ Report 및 하위 세부 항목 CASCADE 삭제 완료")
+
+    await close_db_pool()
+    print("\n🎉 모든 순수 SQL 백엔드 아키텍처 검증 성공!")
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -47,12 +47,12 @@ export function TreeNode({
       {/* Node Row */}
       <div
         ref={itemRef}
-        className={`flex items-center justify-between py-1.5 px-2 rounded-md cursor-pointer transition-all duration-150 ${
+        className={`flex items-center justify-between py-1.5 px-2 rounded-lg cursor-pointer transition-all duration-150 ${
           isActive
-            ? "bg-blue-500/20 text-white font-medium border-l-2 border-blue-500 shadow-sm shadow-blue-500/10"
+            ? "bg-blue-600/15 text-white font-medium border-l-2 border-blue-500"
             : "text-slate-400 hover:text-slate-200 hover:bg-white/[0.04] border-l-2 border-transparent"
         }`}
-        style={{ paddingLeft: `${Math.max(6, depth * 14 + 6)}px` }}
+        style={{ paddingLeft: `${Math.max(6, depth * 12 + 6)}px` }}
         onClick={() => onSelect(node)}
       >
         <div className="flex items-center space-x-1.5 min-w-0 flex-1 mr-1">
@@ -64,7 +64,7 @@ export function TreeNode({
                 e.stopPropagation();
                 toggleExpand(node.id);
               }}
-              className="p-0.5 rounded text-slate-500 hover:text-slate-200 transition-colors flex-shrink-0"
+              className="p-0.5 rounded text-slate-500 hover:text-slate-200 transition-colors flex-shrink-0 cursor-pointer"
               title={isExpanded ? "접기" : "펼치기"}
             >
               {isExpanded ? (
@@ -79,7 +79,7 @@ export function TreeNode({
             </span>
           )}
 
-          {/* Title (Path badge like 0, 0.0 removed as requested) */}
+          {/* Title */}
           <span className={`truncate text-xs ${isActive ? "text-white font-medium" : "text-slate-300"}`}>
             {node.title}
           </span>
@@ -94,7 +94,7 @@ export function TreeNode({
                 e.stopPropagation();
                 onAddSibling(node.parent_id);
               }}
-              className="p-1 rounded text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 transition-colors"
+              className="p-1 rounded text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/15 transition-colors cursor-pointer"
               title="동일 레벨 항목 추가"
             >
               <Plus className="w-3 h-3" />
@@ -106,7 +106,7 @@ export function TreeNode({
               e.stopPropagation();
               onAddChild(node.id);
             }}
-            className="p-1 rounded text-slate-400 hover:text-blue-400 hover:bg-blue-500/10 transition-colors"
+            className="p-1 rounded text-slate-400 hover:text-blue-400 hover:bg-blue-500/15 transition-colors cursor-pointer"
             title="하위 항목 추가"
           >
             <CornerDownRight className="w-3 h-3" />
@@ -117,7 +117,7 @@ export function TreeNode({
               e.stopPropagation();
               onDelete(node);
             }}
-            className="p-1 rounded text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+            className="p-1 rounded text-slate-400 hover:text-red-400 hover:bg-red-500/15 transition-colors cursor-pointer"
             title="삭제"
           >
             <Trash2 className="w-3 h-3" />
@@ -130,7 +130,7 @@ export function TreeNode({
         <div className="relative">
           <div
             className="absolute top-0 bottom-1 w-px bg-white/[0.06]"
-            style={{ left: `${depth * 14 + 11}px` }}
+            style={{ left: `${depth * 12 + 10}px` }}
           />
           <div>
             {node.children.map((child) => (

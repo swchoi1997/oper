@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import "./globals.css";
-import { Terminal, Database } from "lucide-react";
+import { BookOpen } from "lucide-react";
 
 export const metadata: Metadata = {
-  title: "운영 일지 시스템 | Operations Journal",
-  description: "계층형 인프라 및 서비스 운영 일지 관리 시스템",
+  title: "운영 일지 | OpsJournal",
+  description: "인프라 및 시스템 운영 계층 일지 관리 시스템",
 };
 
 export default function RootLayout({
@@ -15,24 +15,27 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ko">
-      <body className="min-h-screen flex flex-col bg-[#090d16] text-slate-100 antialiased">
-        {/* Clean Enterprise Top Navigation */}
-        <header className="sticky top-0 z-40 w-full border-b border-white/[0.08] bg-[#0c101b]/90 backdrop-blur-md">
-          <div className="w-full px-5 h-13 flex items-center justify-between">
+      <body className="min-h-screen flex flex-col bg-[#0b0d11] text-slate-100 antialiased selection:bg-blue-500/30 selection:text-white">
+        {/* Clean, Minimal Top Header */}
+        <header className="sticky top-0 z-40 w-full border-b border-white/[0.08] bg-[#0f1217]/90 backdrop-blur-md">
+          <div className="w-full px-5 sm:px-8 h-13 flex items-center justify-between">
+            {/* Left: Brand & Navigation */}
             <div className="flex items-center space-x-6">
               <Link href="/reports" className="flex items-center space-x-2.5 group">
-                <div className="w-7 h-7 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 group-hover:bg-blue-500/20 transition-colors">
-                  <Terminal className="w-4 h-4" />
+                <div className="w-7 h-7 rounded-lg bg-blue-600/15 border border-blue-500/30 flex items-center justify-center text-blue-400 group-hover:bg-blue-600/25 transition-colors">
+                  <BookOpen className="w-3.5 h-3.5 stroke-[2.2]" />
                 </div>
-                <div className="flex items-baseline space-x-2">
-                  <span className="font-semibold text-sm tracking-tight text-white">
-                    운영 일지
+                <div className="flex items-baseline space-x-1.5">
+                  <span className="font-bold text-sm tracking-tight text-white group-hover:text-blue-400 transition-colors">
+                    OpsJournal
                   </span>
-                  <span className="text-xs text-slate-400 hidden sm:inline">
-                    Operations
+                  <span className="text-[11px] font-medium text-slate-500">
+                    운영 일지
                   </span>
                 </div>
               </Link>
+
+              <div className="h-3.5 w-px bg-white/[0.08]" />
 
               <nav className="flex items-center space-x-1">
                 <Link
@@ -44,20 +47,14 @@ export default function RootLayout({
               </nav>
             </div>
 
-            <div className="flex items-center space-x-3 text-xs">
-              <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-md bg-white/[0.03] border border-white/[0.06] text-slate-300">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                <span className="text-[11px] font-mono text-slate-400">PostgreSQL</span>
-              </div>
-              <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-md bg-white/[0.03] border border-white/[0.06] text-slate-300">
-                <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
-                <span className="text-[11px] font-mono text-slate-400">API 8000</span>
-              </div>
+            {/* Right: Clean & Minimal (Tacky fake profile removed) */}
+            <div className="flex items-center space-x-3 text-xs text-slate-400">
+              {/* Optional clean neutral badge or empty */}
             </div>
           </div>
         </header>
 
-        {/* Main Content */}
+        {/* Main Content Area */}
         <main className="flex-1 flex flex-col">{children}</main>
       </body>
     </html>

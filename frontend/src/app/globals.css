@@ -1,16 +1,22 @@
 @import "tailwindcss";
 
 :root {
-  --bg-base: #090d16;
-  --bg-sidebar: #0d111c;
-  --bg-surface: #131826;
-  --bg-surface-hover: #192033;
-  --border-color: rgba(255, 255, 255, 0.08);
-  --border-subtle: rgba(255, 255, 255, 0.05);
-  --text-primary: #f1f5f9;
+  /* Refined Modern Charcoal / Slate Base (No cheap neon blue) */
+  --bg-base: #0b0d11;
+  --bg-surface: #12151b;
+  --bg-surface-elevated: #181c24;
+  --bg-surface-hover: #1f242e;
+  
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-default: rgba(255, 255, 255, 0.10);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  
+  --text-primary: #f8fafc;
   --text-secondary: #94a3b8;
   --text-muted: #64748b;
-  --accent: #3b82f6;
+  
+  --brand-primary: #3b82f6;
+  --brand-hover: #2563eb;
 }
 
 body {
@@ -20,12 +26,13 @@ body {
   margin: 0;
   padding: 0;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Custom Scrollbar */
+/* Custom Scrollbar - Sleek and unobtrusive */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 
 ::-webkit-scrollbar-track {
@@ -33,25 +40,38 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
-  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.28);
 }
 
 /* Row Highlight Animation on Anchor Scroll */
 @keyframes highlightSection {
   0% {
-    background-color: rgba(59, 130, 246, 0.15);
-    border-color: rgba(59, 130, 246, 0.4);
+    background-color: rgba(59, 130, 246, 0.12);
+    border-color: rgba(59, 130, 246, 0.5);
   }
   100% {
-    background-color: transparent;
+    background-color: inherit;
+    border-color: var(--border-default);
   }
 }
 
 .section-highlight {
-  animation: highlightSection 2s ease-out;
+  animation: highlightSection 2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Subtle Card Glow on Focus/Hover */
+.surface-card {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.surface-card:hover {
+  border-color: var(--border-strong);
+  background-color: var(--bg-surface-elevated);
 }
