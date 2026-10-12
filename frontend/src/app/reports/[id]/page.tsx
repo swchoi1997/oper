@@ -15,6 +15,7 @@ import { TreeNode } from "@/components/TreeNode";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import {
   ArrowLeft,
+  ArrowRight,
   Calendar,
   User,
   Plus,
@@ -37,6 +38,9 @@ import {
   Database,
   UploadCloud,
   ChevronRight,
+  ChevronUp,
+  ChevronDown,
+  GripVertical,
   SlidersHorizontal,
 } from "lucide-react";
 
@@ -59,6 +63,13 @@ export default function ReportDetailPage() {
     image_url: string;
   }>({ title: "", description: "", content: "", image_url: "" });
   const [isSaving, setIsSaving] = useState(false);
+
+  // Drag and drop & Position Reorder State
+  const [draggedNodeId, setDraggedNodeId] = useState<number | null>(null);
+  const [dropTarget, setDropTarget] = useState<{
+    targetId: number;
+    position: "before" | "after" | "inside";
+  } | null>(null);
 
   // Expanded state map for tree outline
   const [expandedMap, setExpandedMap] = useState<Record<number, boolean>>({});
@@ -288,6 +299,174 @@ export default function ReportDetailPage() {
     await loadData();
   };
 
+  // Helper to find node, its parent, siblings list, and index in treeData
+  const findNodeInfo = useCallback(
+    (
+      nodes: ReportDetailNode[],
+      targetId: number,
+      parent: ReportDetailNode | null = null
+    ): {
+      node: ReportDetailNode;
+      parent: ReportDetailNode | null;
+      siblings: ReportDetailNode[];
+      index: number;
+    } | null => {
+      for (let i = 0; i < nodes.length; i++) {
+        if (nodes[i].id === targetId) {
+          return { node: nodes[i], parent, siblings: nodes, index: i };
+        }
+        if (nodes[i].children && nodes[i].children.length > 0) {
+          const found = findNodeInfo(nodes[i].children, targetId, nodes[i]);
+          if (found) return found;
+        }
+      }
+      return null;
+    },
+    []
+  );
+
+  // Cycle check: prevent dropping a parent into its own descendants
+  const isNodeDescendant = useCallback((rootNode: ReportDetailNode, targetId: number): boolean => {
+    if (rootNode.id === targetId) return true;
+    if (!rootNode.children) return false;
+    return rootNode.children.some((c) => isNodeDescendant(c, targetId));
+  }, []);
+
+  // Quick Move Up
+  const handleMoveUp = async (nodeId: number) => {
+    const info = findNodeInfo(treeData, nodeId);
+    if (!info || info.index <= 0) return;
+    const parentId = info.parent ? info.parent.id : null;
+    const newSortOrder = info.index - 1;
+    try {
+      const updatedTree = await api.reorderDetail(reportId, nodeId, parentId, newSortOrder);
+      setTreeData(updatedTree);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "위치 이동에 실패했습니다.");
+    }
+  };
+
+  // Quick Move Down
+  const handleMoveDown = async (nodeId: number) => {
+    const info = findNodeInfo(treeData, nodeId);
+    if (!info || info.index >= info.siblings.length - 1) return;
+    const parentId = info.parent ? info.parent.id : null;
+    const newSortOrder = info.index + 1;
+    try {
+      const updatedTree = await api.reorderDetail(reportId, nodeId, parentId, newSortOrder);
+      setTreeData(updatedTree);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "위치 이동에 실패했습니다.");
+    }
+  };
+
+  // Quick Outdent (Move to parent's level)
+  const handleOutdent = async (nodeId: number) => {
+    const info = findNodeInfo(treeData, nodeId);
+    if (!info || !info.parent) return; // already root
+    const parentInfo = findNodeInfo(treeData, info.parent.id);
+    const grandParentId = parentInfo?.parent ? parentInfo.parent.id : null;
+    const newSortOrder = (parentInfo ? parentInfo.index : 0) + 1;
+    try {
+      const updatedTree = await api.reorderDetail(reportId, nodeId, grandParentId, newSortOrder);
+      setTreeData(updatedTree);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "상위 레벨 이동에 실패했습니다.");
+    }
+  };
+
+  // Quick Indent (Move to child of previous sibling)
+  const handleIndent = async (nodeId: number) => {
+    const info = findNodeInfo(treeData, nodeId);
+    if (!info || info.index <= 0) return; // no previous sibling
+    const prevSibling = info.siblings[info.index - 1];
+    const newParentId = prevSibling.id;
+    const newSortOrder = prevSibling.children ? prevSibling.children.length : 0;
+    try {
+      const updatedTree = await api.reorderDetail(reportId, nodeId, newParentId, newSortOrder);
+      setTreeData(updatedTree);
+      setExpandedMap((prev) => ({ ...prev, [newParentId]: true }));
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "하위 레벨 이동에 실패했습니다.");
+    }
+  };
+
+  // Drag and drop handlers
+  const handleDragStart = (nodeId: number) => {
+    setDraggedNodeId(nodeId);
+  };
+
+  const handleDragOver = (nodeId: number, position: "before" | "after" | "inside") => {
+    if (!draggedNodeId || draggedNodeId === nodeId) return;
+
+    // Cycle check: cannot drop into self or descendants
+    const draggedInfo = findNodeInfo(treeData, draggedNodeId);
+    if (draggedInfo && position === "inside" && isNodeDescendant(draggedInfo.node, nodeId)) {
+      return;
+    }
+
+    setDropTarget({ targetId: nodeId, position });
+  };
+
+  const handleDragLeave = (nodeId: number) => {
+    if (dropTarget?.targetId === nodeId) {
+      setDropTarget(null);
+    }
+  };
+
+  const handleDrop = async (targetId: number) => {
+    if (!draggedNodeId || draggedNodeId === targetId || !dropTarget) {
+      setDraggedNodeId(null);
+      setDropTarget(null);
+      return;
+    }
+
+    const { position } = dropTarget;
+    const targetInfo = findNodeInfo(treeData, targetId);
+    const draggedInfo = findNodeInfo(treeData, draggedNodeId);
+    if (!targetInfo || !draggedInfo) {
+      setDraggedNodeId(null);
+      setDropTarget(null);
+      return;
+    }
+
+    // Cycle check
+    if (isNodeDescendant(draggedInfo.node, targetId)) {
+      alert("자신의 하위 항목으로는 이동할 수 없습니다.");
+      setDraggedNodeId(null);
+      setDropTarget(null);
+      return;
+    }
+
+    let newParentId: number | null = null;
+    let newSortOrder = 0;
+
+    if (position === "inside") {
+      newParentId = targetId;
+      newSortOrder = targetInfo.node.children ? targetInfo.node.children.length : 0;
+    } else if (position === "before") {
+      newParentId = targetInfo.parent ? targetInfo.parent.id : null;
+      newSortOrder = targetInfo.index;
+    } else if (position === "after") {
+      newParentId = targetInfo.parent ? targetInfo.parent.id : null;
+      newSortOrder = targetInfo.index + 1;
+    }
+
+    const movingId = draggedNodeId;
+    setDraggedNodeId(null);
+    setDropTarget(null);
+
+    try {
+      const updatedTree = await api.reorderDetail(reportId, movingId, newParentId, newSortOrder);
+      setTreeData(updatedTree);
+      if (newParentId) {
+        setExpandedMap((prev) => ({ ...prev, [newParentId]: true }));
+      }
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : "위치 이동에 실패했습니다.");
+    }
+  };
+
   const totalNodeCount = useRef(0);
   const countNodes = (nodes: ReportDetailNode[]): number => {
     let c = 0;
@@ -470,7 +649,7 @@ export default function ReportDetailPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              {treeData.map((rootNode) => (
+              {treeData.map((rootNode, rIdx) => (
                 <WideDocumentRow
                   key={rootNode.id}
                   node={rootNode}
@@ -494,6 +673,19 @@ export default function ReportDetailPage() {
                     setLightboxImageUrl(url);
                     setLightboxTitle(title);
                   }}
+                  canMoveUp={rIdx > 0}
+                  canMoveDown={rIdx < treeData.length - 1}
+                  canIndent={rIdx > 0}
+                  onMoveUp={handleMoveUp}
+                  onMoveDown={handleMoveDown}
+                  onOutdent={handleOutdent}
+                  onIndent={handleIndent}
+                  draggedNodeId={draggedNodeId}
+                  dropTarget={dropTarget}
+                  onDragStartNode={handleDragStart}
+                  onDragOverNode={handleDragOver}
+                  onDragLeaveNode={handleDragLeave}
+                  onDropNode={handleDrop}
                 />
               ))}
             </div>
@@ -569,6 +761,23 @@ interface WideDocumentRowProps {
   onAddSibling: (parentId: number | null) => void;
   onOpenDelete: (node: ReportDetailNode) => void;
   onOpenLightbox: (url: string, title: string) => void;
+
+  // Position Movement & Level Controls
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  canIndent: boolean;
+  onMoveUp: (id: number) => void;
+  onMoveDown: (id: number) => void;
+  onOutdent: (id: number) => void;
+  onIndent: (id: number) => void;
+
+  // Drag and Drop
+  draggedNodeId: number | null;
+  dropTarget: { targetId: number; position: "before" | "after" | "inside" } | null;
+  onDragStartNode: (id: number) => void;
+  onDragOverNode: (id: number, position: "before" | "after" | "inside") => void;
+  onDragLeaveNode: (id: number) => void;
+  onDropNode: (id: number) => void;
 }
 
 function WideDocumentRow({
@@ -585,8 +794,24 @@ function WideDocumentRow({
   onAddSibling,
   onOpenDelete,
   onOpenLightbox,
+  canMoveUp,
+  canMoveDown,
+  canIndent,
+  onMoveUp,
+  onMoveDown,
+  onOutdent,
+  onIndent,
+  draggedNodeId,
+  dropTarget,
+  onDragStartNode,
+  onDragOverNode,
+  onDragLeaveNode,
+  onDropNode,
 }: WideDocumentRowProps) {
+  const [isDragReady, setIsDragReady] = useState(false);
   const isEditing = editingNodeId === node.id;
+  const isThisDragging = draggedNodeId === node.id;
+  const isDropTargetThis = dropTarget?.targetId === node.id && draggedNodeId !== node.id;
   const indentPixels = Math.min(depth * 28, 140);
 
   // Helper to generate a contextual, realistic monitoring preview when image_url is absent
@@ -694,12 +919,79 @@ function WideDocumentRow({
       <div
         id={`section-${node.id}`}
         style={{ marginLeft: `${indentPixels}px` }}
+        draggable={isDragReady && !isEditing}
+        onDragStart={(e) => {
+          e.dataTransfer.setData("text/plain", node.id.toString());
+          e.dataTransfer.effectAllowed = "move";
+          onDragStartNode(node.id);
+        }}
+        onDragEnd={() => {
+          setIsDragReady(false);
+          onDragLeaveNode(node.id);
+        }}
+        onDragOver={(e) => {
+          if (!draggedNodeId || draggedNodeId === node.id) return;
+          e.preventDefault();
+          e.stopPropagation();
+          const rect = e.currentTarget.getBoundingClientRect();
+          const relY = e.clientY - rect.top;
+          const ratio = relY / rect.height;
+          let pos: "before" | "after" | "inside";
+          if (ratio < 0.28) {
+            pos = "before";
+          } else if (ratio > 0.72) {
+            pos = "after";
+          } else {
+            pos = "inside";
+          }
+          onDragOverNode(node.id, pos);
+        }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+            onDragLeaveNode(node.id);
+          }
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onDropNode(node.id);
+        }}
         className={`group relative rounded-xl border transition-all duration-200 scroll-mt-26 p-5 ${
           isEditing
             ? "border-blue-500/50 bg-[#141822] shadow-xl shadow-blue-500/5 ring-1 ring-blue-500/30"
+            : isThisDragging
+            ? "opacity-30 border-dashed border-blue-500/50 bg-[#12151b] scale-[0.99]"
+            : isDropTargetThis && dropTarget?.position === "inside"
+            ? "border-blue-500/70 bg-blue-500/[0.08] ring-2 ring-blue-500/40"
             : "border-white/[0.08] bg-[#12151b] hover:border-white/[0.16] hover:bg-[#151922]"
         }`}
       >
+        {/* Drop Indicators */}
+        {isDropTargetThis && dropTarget?.position === "before" && (
+          <div className="absolute -top-2 left-2 right-2 z-30 flex items-center pointer-events-none">
+            <div className="w-2.5 h-2.5 rounded-full bg-blue-500 ring-2 ring-blue-400" />
+            <div className="flex-1 h-1 bg-blue-500 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.8)]" />
+            <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-600 text-white shadow-md">
+              이 앞에 배치
+            </span>
+          </div>
+        )}
+        {isDropTargetThis && dropTarget?.position === "after" && (
+          <div className="absolute -bottom-2 left-2 right-2 z-30 flex items-center pointer-events-none">
+            <div className="w-2.5 h-2.5 rounded-full bg-blue-500 ring-2 ring-blue-400" />
+            <div className="flex-1 h-1 bg-blue-500 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.8)]" />
+            <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-600 text-white shadow-md">
+              이 뒤에 배치
+            </span>
+          </div>
+        )}
+        {isDropTargetThis && dropTarget?.position === "inside" && (
+          <div className="absolute top-2.5 right-3 z-30 pointer-events-none px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-600 text-white shadow-md flex items-center gap-1">
+            <CornerDownRight className="w-3 h-3" />
+            <span>하위 항목으로 이동</span>
+          </div>
+        )}
+
         {/* Depth Tree Guide L-Branch Line */}
         {depth > 0 && (
           <div
@@ -767,7 +1059,7 @@ function WideDocumentRow({
                 <ImageIcon className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
               </div>
 
-              {/* Real-time Image preview (30% increase: h-[200px] sm:h-[215px]) */}
+              {/* Real-time Image preview (h-[200px] sm:h-[215px]) */}
               <div className="relative rounded-xl border border-white/[0.08] bg-[#0a0d13] h-[200px] sm:h-[215px] flex items-center justify-center overflow-hidden">
                 {editFormData.image_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -831,8 +1123,16 @@ function WideDocumentRow({
           <div className="flex flex-col lg:flex-row gap-6 items-stretch">
             {/* Column 1: 제목 및 요약 설명 영역 */}
             <div className="w-full lg:w-64 xl:w-72 flex-shrink-0">
-              {/* Header row: Depth Badge */}
+              {/* Header row: Grip Drag Handle & Depth Badge */}
               <div className="flex items-center gap-1.5 mb-2">
+                <div
+                  className="p-1 -ml-1 rounded text-slate-500 hover:text-blue-400 hover:bg-white/[0.06] cursor-grab active:cursor-grabbing transition-colors select-none"
+                  title="드래그하여 원하는 위치로 이동 (위/아래 또는 하위 항목)"
+                  onMouseDown={() => setIsDragReady(true)}
+                  onMouseUp={() => setIsDragReady(false)}
+                >
+                  <GripVertical className="w-3.5 h-3.5" />
+                </div>
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-white/[0.05] text-slate-400 border border-white/[0.06] flex-shrink-0">
                   Depth {node.depth}
                 </span>
@@ -903,9 +1203,55 @@ function WideDocumentRow({
                 )}
               </div>
 
-              {/* 우측 하단 액션 버튼 그룹 (1.동일추가 -> 2.하위추가 -> 3.수정 -> 4.삭제) */}
+              {/* 우측 하단 액션 버튼 그룹 (위치 이동 버튼 그룹 + 1.동일추가 -> 2.하위추가 -> 3.수정 -> 4.삭제) */}
               <div className="mt-3 flex items-center justify-end">
                 <div className="flex items-center gap-0.5 bg-white/[0.03] p-0.5 rounded-lg border border-white/[0.06] shadow-sm">
+                  {/* 위치 이동 퀵 버튼 (위/아래/내어쓰기/들여쓰기) */}
+                  <button
+                    type="button"
+                    onClick={() => onMoveUp(node.id)}
+                    disabled={!canMoveUp}
+                    className="p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-white/[0.08] disabled:opacity-20 disabled:hover:bg-transparent disabled:hover:text-slate-400 transition-colors cursor-pointer disabled:cursor-not-allowed"
+                    title="위로 이동"
+                    aria-label="위로 이동"
+                  >
+                    <ChevronUp className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onMoveDown(node.id)}
+                    disabled={!canMoveDown}
+                    className="p-1.5 rounded-md text-slate-400 hover:text-white hover:bg-white/[0.08] disabled:opacity-20 disabled:hover:bg-transparent disabled:hover:text-slate-400 transition-colors cursor-pointer disabled:cursor-not-allowed"
+                    title="아래로 이동"
+                    aria-label="아래로 이동"
+                  >
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  </button>
+                  {depth > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => onOutdent(node.id)}
+                      className="p-1.5 rounded-md text-slate-400 hover:text-amber-300 hover:bg-amber-500/10 transition-colors cursor-pointer"
+                      title="상위 레벨로 이동 (내어쓰기)"
+                      aria-label="상위 레벨로 이동"
+                    >
+                      <ArrowLeft className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  {canIndent && (
+                    <button
+                      type="button"
+                      onClick={() => onIndent(node.id)}
+                      className="p-1.5 rounded-md text-slate-400 hover:text-indigo-300 hover:bg-indigo-500/10 transition-colors cursor-pointer"
+                      title="하위 레벨로 이동 (들여쓰기)"
+                      aria-label="하위 레벨로 이동"
+                    >
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+
+                  <div className="h-3 w-px bg-white/[0.08] mx-0.5" />
+
                   {/* 1. 동일 레벨 항목 추가 */}
                   <button
                     type="button"
@@ -928,7 +1274,7 @@ function WideDocumentRow({
                     <CornerDownRight className="w-3.5 h-3.5" />
                   </button>
 
-                  {/* 3. 내용 수정 (수정 버튼 3번째 위치) */}
+                  {/* 3. 내용 수정 (수정 버튼 3번째 위치 유지) */}
                   <button
                     type="button"
                     onClick={() => onStartEdit(node)}
@@ -959,7 +1305,7 @@ function WideDocumentRow({
       {/* Recursive Children Rows with depth + 1 */}
       {node.children && node.children.length > 0 && (
         <div className="space-y-3.5">
-          {node.children.map((child) => (
+          {node.children.map((child, cIdx) => (
             <WideDocumentRow
               key={child.id}
               node={child}
@@ -975,6 +1321,19 @@ function WideDocumentRow({
               onAddSibling={onAddSibling}
               onOpenDelete={onOpenDelete}
               onOpenLightbox={onOpenLightbox}
+              canMoveUp={cIdx > 0}
+              canMoveDown={cIdx < node.children.length - 1}
+              canIndent={cIdx > 0}
+              onMoveUp={onMoveUp}
+              onMoveDown={onMoveDown}
+              onOutdent={onOutdent}
+              onIndent={onIndent}
+              draggedNodeId={draggedNodeId}
+              dropTarget={dropTarget}
+              onDragStartNode={onDragStartNode}
+              onDragOverNode={onDragOverNode}
+              onDragLeaveNode={onDragLeaveNode}
+              onDropNode={onDropNode}
             />
           ))}
         </div>

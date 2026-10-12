@@ -260,30 +260,70 @@ class ReportDetailService:
         new_parent_id = reorder_in.new_parent_id
 
         if new_parent_id is not None:
+            if new_parent_id == target["id"]:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="자기 자신을 부모로 설정할 수 없습니다."
+                )
             new_parent = await self.repo.get_by_id(conn, report_id, new_parent_id)
             if not new_parent:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="새로운 부모 노드를 찾을 수 없습니다."
                 )
+            if new_parent["path"].startswith(f"{target['path']}."):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="자신의 하위 항목으로 이동할 수 없습니다."
+                )
             new_depth = new_parent["depth"] + 1
         else:
             new_depth = 0
 
         async with conn.transaction():
+            # 1. 새 부모 하위의 기존 형제 목록 (이동 대상 제외)
+            existing_siblings = await self.repo.get_siblings(conn, report_id, new_parent_id)
+            sibling_ids = [s["id"] for s in existing_siblings if s["id"] != target["id"]]
+
+            # 2. 요청된 순서 위치에 target_id 삽입
+            clamped_order = max(0, min(reorder_in.new_sort_order, len(sibling_ids)))
+            sibling_ids.insert(clamped_order, target["id"])
+
+            # 3. 타깃 노드의 부모 및 depth 갱신
             await self.repo.update_node_placement(
                 conn=conn,
                 report_id=report_id,
-                detail_id=reorder_in.target_detail_id,
+                detail_id=target["id"],
                 new_parent_id=new_parent_id,
-                new_sort_order=reorder_in.new_sort_order,
+                new_sort_order=clamped_order,
                 new_depth=new_depth
             )
 
-            # 이전 부모 및 새 부모의 형제 노드들 재인덱싱
-            await self.reindex_siblings_and_descendants(conn, report_id, old_parent_id)
+            # 4. 새 부모 하위 모든 형제의 sort_order 재할당
+            for idx, s_id in enumerate(sibling_ids):
+                if s_id == target["id"]:
+                    await conn.execute(
+                        "UPDATE report_details SET parent_id = $1, sort_order = $2, updated_at = NOW() WHERE id = $3",
+                        new_parent_id, idx, target["id"]
+                    )
+                else:
+                    await conn.execute(
+                        "UPDATE report_details SET sort_order = $1, updated_at = NOW() WHERE id = $2",
+                        idx, s_id
+                    )
+
+            # 5. 다른 부모에서 이동해 온 경우 이전 부모의 남은 형제들 sort_order 재색인
             if old_parent_id != new_parent_id:
-                await self.reindex_siblings_and_descendants(conn, report_id, new_parent_id)
+                old_siblings = await self.repo.get_siblings(conn, report_id, old_parent_id)
+                for idx, s in enumerate(old_siblings):
+                    if s["sort_order"] != idx:
+                        await conn.execute(
+                            "UPDATE report_details SET sort_order = $1, updated_at = NOW() WHERE id = $2",
+                            idx, s["id"]
+                        )
+
+            # 6. PostgreSQL 재귀 CTE를 통해 전체 트리의 path와 depth를 일괄 원자적 동기화 (접두사 충돌 0%)
+            await self.repo.recompute_tree_paths(conn, report_id)
 
         # 갱신된 전체 트리 반환
         return await self.get_tree(conn, report_id)

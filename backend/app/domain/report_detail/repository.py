@@ -183,7 +183,7 @@ class ReportDetailRepository:
     ) -> None:
         query = """
             UPDATE report_details
-            SET path = $1 || SUBSTRING(path FROM $2), updated_at = NOW()
+            SET path = $1 || SUBSTRING(path, $2::int), updated_at = NOW()
             WHERE report_id = $3 AND path LIKE $4
         """
         like_pattern = f"{old_prefix}%"
@@ -206,3 +206,26 @@ class ReportDetailRepository:
             WHERE id = $4 AND report_id = $5
         """
         await conn.execute(query, new_parent_id, new_sort_order, new_depth, detail_id, report_id)
+
+    async def recompute_tree_paths(self, conn: asyncpg.Connection, report_id: int) -> None:
+        """
+        PostgreSQL 재귀 CTE를 사용하여 전체 일지의 모든 노드 path 및 depth를 원자적으로 일괄 재계산합니다.
+        순서 변경 시 접두사 충돌 없이 100% 무결성을 보장합니다.
+        """
+        query = """
+            WITH RECURSIVE tree AS (
+                SELECT id, parent_id, sort_order, sort_order::text AS new_path, 0 AS new_depth
+                FROM report_details
+                WHERE report_id = $1 AND parent_id IS NULL
+                UNION ALL
+                SELECT c.id, c.parent_id, c.sort_order, t.new_path || '.' || c.sort_order, t.new_depth + 1
+                FROM report_details c
+                JOIN tree t ON c.parent_id = t.id
+                WHERE c.report_id = $1
+            )
+            UPDATE report_details d
+            SET path = t.new_path, depth = t.new_depth, updated_at = NOW()
+            FROM tree t
+            WHERE d.id = t.id;
+        """
+        await conn.execute(query, report_id)
