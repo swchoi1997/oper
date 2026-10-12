@@ -14,6 +14,7 @@ export interface ReportCreateInput {
   report_date?: string;
   author?: string;
   status?: string;
+  with_sample?: boolean;
 }
 
 export interface ReportUpdateInput {

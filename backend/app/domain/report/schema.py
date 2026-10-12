@@ -9,7 +9,7 @@ class ReportBase(BaseModel):
     status: str = Field(default="DRAFT", max_length=50, description="상태 (DRAFT, COMPLETED, ARCHIVED)")
 
 class ReportCreate(ReportBase):
-    pass
+    with_sample: bool = Field(default=True, description="기본 샘플 점검 항목 포함 여부")
 
 class ReportUpdate(BaseModel):
     title: Optional[str] = Field(default=None, max_length=255)

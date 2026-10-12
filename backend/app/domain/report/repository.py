@@ -9,18 +9,29 @@ class ReportRepository:
     asyncpg parameterized query($1, $2, ...)를 직접 실행합니다.
     """
 
-    async def count_reports(self, conn: asyncpg.Connection, search: Optional[str] = None) -> int:
+    async def count_reports(
+        self,
+        conn: asyncpg.Connection,
+        search: Optional[str] = None,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None
+    ) -> int:
+        conditions: List[str] = []
+        params: List[Any] = []
+
         if search:
-            query = """
-                SELECT count(*)::int
-                FROM reports
-                WHERE title ILIKE $1 OR author ILIKE $1
-            """
-            search_param = f"%{search}%"
-            val = await conn.fetchval(query, search_param)
-        else:
-            query = "SELECT count(*)::int FROM reports"
-            val = await conn.fetchval(query)
+            params.append(f"%{search}%")
+            conditions.append(f"(title ILIKE ${len(params)} OR author ILIKE ${len(params)})")
+        if start_date:
+            params.append(start_date)
+            conditions.append(f"report_date >= ${len(params)}")
+        if end_date:
+            params.append(end_date)
+            conditions.append(f"report_date <= ${len(params)}")
+
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        query = f"SELECT count(*)::int FROM reports {where_clause}"
+        val = await conn.fetchval(query, *params)
         return val or 0
 
     async def list_reports(
@@ -28,32 +39,38 @@ class ReportRepository:
         conn: asyncpg.Connection,
         offset: int,
         limit: int,
-        search: Optional[str] = None
+        search: Optional[str] = None,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None
     ) -> List[Dict[str, Any]]:
+        conditions: List[str] = []
+        params: List[Any] = []
+
         if search:
-            query = """
-                SELECT r.id, r.title, r.report_date, r.author, r.status, r.created_at, r.updated_at,
-                       COUNT(d.id)::int AS details_count
-                FROM reports r
-                LEFT JOIN report_details d ON d.report_id = r.id
-                WHERE r.title ILIKE $1 OR r.author ILIKE $1
-                GROUP BY r.id
-                ORDER BY r.report_date DESC, r.id DESC
-                LIMIT $2 OFFSET $3
-            """
-            search_param = f"%{search}%"
-            rows = await conn.fetch(query, search_param, limit, offset)
-        else:
-            query = """
-                SELECT r.id, r.title, r.report_date, r.author, r.status, r.created_at, r.updated_at,
-                       COUNT(d.id)::int AS details_count
-                FROM reports r
-                LEFT JOIN report_details d ON d.report_id = r.id
-                GROUP BY r.id
-                ORDER BY r.report_date DESC, r.id DESC
-                LIMIT $1 OFFSET $2
-            """
-            rows = await conn.fetch(query, limit, offset)
+            params.append(f"%{search}%")
+            conditions.append(f"(r.title ILIKE ${len(params)} OR r.author ILIKE ${len(params)})")
+        if start_date:
+            params.append(start_date)
+            conditions.append(f"r.report_date >= ${len(params)}")
+        if end_date:
+            params.append(end_date)
+            conditions.append(f"r.report_date <= ${len(params)}")
+
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        limit_idx = len(params) + 1
+        offset_idx = len(params) + 2
+
+        query = f"""
+            SELECT r.id, r.title, r.report_date, r.author, r.status, r.created_at, r.updated_at,
+                   COUNT(d.id)::int AS details_count
+            FROM reports r
+            LEFT JOIN report_details d ON d.report_id = r.id
+            {where_clause}
+            GROUP BY r.id
+            ORDER BY r.report_date DESC, r.id DESC
+            LIMIT ${limit_idx} OFFSET ${offset_idx}
+        """
+        rows = await conn.fetch(query, *params, limit, offset)
         return records_to_dicts(rows)
 
     async def get_by_id(self, conn: asyncpg.Connection, report_id: int) -> Optional[Dict[str, Any]]:

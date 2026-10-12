@@ -60,6 +60,7 @@ async def init_db() -> None:
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
             CREATE INDEX IF NOT EXISTS ix_reports_title ON reports (title);
+            CREATE INDEX IF NOT EXISTS ix_reports_report_date ON reports (report_date);
         """)
 
         # 2. report_details 테이블 생성

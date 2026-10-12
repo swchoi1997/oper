@@ -43,9 +43,17 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 
 export const api = {
   // Report API
-  async getReports(page: number = 1, size: number = 20, search?: string): Promise<{ items: Report[]; total: number }> {
+  async getReports(
+    page: number = 1,
+    size: number = 20,
+    search?: string,
+    startDate?: string,
+    endDate?: string
+  ): Promise<{ items: Report[]; total: number }> {
     const params = new URLSearchParams({ page: page.toString(), size: size.toString() });
     if (search) params.append("search", search);
+    if (startDate) params.append("start_date", startDate);
+    if (endDate) params.append("end_date", endDate);
     return request(`/api/reports?${params.toString()}`);
   },
 

@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Optional
 from fastapi import APIRouter, Depends, Query, status
 import asyncpg
@@ -18,10 +19,14 @@ async def list_reports(
     page: int = Query(1, ge=1, description="페이지 번호"),
     size: int = Query(10, ge=1, le=100, description="페이지 크기"),
     search: Optional[str] = Query(None, description="제목 또는 작성자 검색"),
+    start_date: Optional[date] = Query(None, description="조회 시작 일자 (YYYY-MM-DD)"),
+    end_date: Optional[date] = Query(None, description="조회 종료 일자 (YYYY-MM-DD)"),
     conn: asyncpg.Connection = Depends(get_db_connection)
 ):
-    """운영 일지 목록을 페이징 및 검색 조건으로 조회합니다."""
-    return await report_service.list_reports(conn, page=page, size=size, search=search)
+    """운영 일지 목록을 페이징, 검색 조건 및 날짜 범위로 조회합니다."""
+    return await report_service.list_reports(
+        conn, page=page, size=size, search=search, start_date=start_date, end_date=end_date
+    )
 
 @router.post("", response_model=ReportResponse, status_code=status.HTTP_201_CREATED)
 async def create_report(
